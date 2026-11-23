@@ -1,0 +1,30 @@
+{
+  "appId": "com.veratiez.app",
+  "appName": "VERA",
+  "webDir": "www",
+  "server": {
+    "url": "https://veratiez.netlify.app",
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "backgroundColor": "#040d1d",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1300,
+      "launchAutoHide": true,
+      "backgroundColor": "#040d1d",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#040d1d",
+      "overlaysWebView": false
+    }
+  }
+}

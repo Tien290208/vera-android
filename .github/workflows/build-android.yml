@@ -1,0 +1,98 @@
+name: Build VERA Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Tải mã nguồn dự án
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cài đặt Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cài đặt thư viện Capacitor
+        run: npm install
+
+      - name: Tạo bộ Adaptive Icon & Splash Screen từ vera-icon.jpg
+        run: node scripts/prepare-android.mjs --prep-assets
+
+      - name: Khởi tạo dự án Android gốc
+        run: npx cap add android
+
+      - name: Áp dụng quyền phần cứng & nút Back chuẩn gốc
+        run: node scripts/prepare-android.mjs --patch-android
+
+      - name: Gắn bộ Icon & Splash Screen vào dự án Android
+        run: npx capacitor-assets generate --android
+
+      - name: Đồng bộ cấu hình Capacitor Android
+        run: npx cap sync android
+
+      - name: Biên dịch bản phát hành (Release APK)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Căn chỉnh & Ký số APK chính chủ
+        env:
+          VERA_KEYSTORE_B64: ${{ secrets.VERA_KEYSTORE_B64 }}
+          VERA_KEYSTORE_PASS: ${{ secrets.VERA_KEYSTORE_PASS }}
+        run: |
+          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILD_TOOLS=$(ls -d "$SDK_DIR"/build-tools/* | sort -V | tail -n 1)
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          KS_PASS="${VERA_KEYSTORE_PASS:-VeraReleaseKey2026}"
+
+          if [ -n "$VERA_KEYSTORE_B64" ]; then
+            echo "$VERA_KEYSTORE_B64" | base64 --decode > vera-release.jks
+            echo "NEW_KS=false" >> $GITHUB_ENV
+          else
+            keytool -genkeypair -v -keystore vera-release.jks -storetype PKCS12 \
+              -keyalg RSA -keysize 2048 -validity 10000 -alias vera \
+              -storepass "$KS_PASS" -keypass "$KS_PASS" \
+              -dname "CN=VERA App, OU=VERA, O=VERA, L=HCM, S=VN, C=VN"
+            base64 -w 0 vera-release.jks > vera-keystore-base64.txt
+            echo "NEW_KS=true" >> $GITHUB_ENV
+          fi
+
+          mkdir -p dist
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED_APK" dist/app-aligned.apk
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks vera-release.jks \
+            --ks-key-alias vera \
+            --ks-pass "pass:$KS_PASS" \
+            --key-pass "pass:$KS_PASS" \
+            --out dist/VERA-Android.apk \
+            dist/app-aligned.apk
+
+          "$BUILD_TOOLS/apksigner" verify --verbose dist/VERA-Android.apk
+
+      - name: Xuất file VERA-Android.apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: VERA-Android-APK
+          path: dist/VERA-Android.apk
+
+      - name: Lưu khóa ký số chính chủ (chỉ xuất ở lần build đầu tiên)
+        if: env.NEW_KS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VERA-Keystore-BACKUP-GIU-KIN
+          path: |
+            vera-release.jks
+            vera-keystore-base64.txt
